@@ -28,8 +28,7 @@ voices/*
 !voices/.gitkeep
 logs/*
 !logs/.gitkeep
-brain/memory/*
-!brain/memory/.gitkeep
+brain/*.json
 
 # Database
 *.db

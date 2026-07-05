@@ -9,13 +9,15 @@ class ResearchStage(Stage):
 
         suggestions = brain.suggest_hook()
         avoid = brain.avoid_words()
+        niche = ctx.get("niche", "general")
 
         ctx["research"] = {
             "topic": ctx.topic,
             "suggested_hook": suggestions,
             "avoid_words": avoid,
-            "niche": ctx.get("niche", "general"),
-            "sources": [],
+            "niche": niche,
+            "voice": brain.suggest_voice(),
+            "duration": brain.suggest_duration() or 30,
         }
 
         return ctx

@@ -10,29 +10,46 @@ from pipeline.stages import (
     ResearchStage, WritingStage, VoiceStage, AssetStage,
     RenderStage, ThumbnailStage, UploadStage,
 )
+from pipeline.interfaces.llm import OpenAILlmProvider
+from pipeline.interfaces.tts import EdgeTTSProvider
+from pipeline.interfaces.storage import LocalStorageProvider
 from brain.manager import Brain
+from renderer.engine import RenderEngine
+from app.config import settings
 
 
 class PipelineOrchestrator:
     def __init__(self, brain: Brain, queue: PipelineQueue):
         self.brain = brain
         self.queue = queue
+        self.llm = OpenAILlmProvider(
+            api_key=settings.openai_api_key if settings.openai_api_key else None,
+            model=settings.openai_model,
+        )
+        self.tts = EdgeTTSProvider()
+        self.storage = LocalStorageProvider(base_path=settings.assets_dir)
+        self.renderer = RenderEngine(output_dir=settings.output_dir)
+
         self.stages = {
             "researching": ResearchStage(),
-            "writing": WritingStage(),
-            "voicing": VoiceStage(),
-            "assembling": AssetStage(),
-            "rendering": RenderStage(),
+            "writing": WritingStage(llm_provider=self.llm),
+            "voicing": VoiceStage(tts_provider=self.tts),
+            "assembling": AssetStage(render_engine=self.renderer),
+            "rendering": RenderStage(render_engine=self.renderer),
             "thumbnailing": ThumbnailStage(),
-            "uploading": UploadStage(),
+            "uploading": UploadStage(youtube_client=None),
         }
         self._running = False
 
     def create_job(self, topic: str, **kwargs) -> str:
         job_id = str(uuid.uuid4())
-        ctx = StageContext(
-            {"job_id": job_id, "topic": topic, "_brain": self.brain, **kwargs}
-        )
+        ctx = StageContext({
+            "job_id": job_id,
+            "topic": topic,
+            "output_dir": settings.output_dir,
+            "assets_dir": settings.assets_dir,
+            **kwargs,
+        })
         self.queue.enqueue(job_id, topic, dict(ctx))
         return job_id
 
@@ -46,12 +63,19 @@ class PipelineOrchestrator:
         if current_stage == "done":
             return True
 
-        ctx = StageContext(
-            {**(json.loads(job["context"]) if isinstance(job.get("context"), str) else job.get("context", {})),
-             "_brain": self.brain, "_queue": self.queue}
-        )
-        ctx["job_id"] = job_id
-        ctx["topic"] = job["topic"]
+        ctx_data = job.get("context", {})
+        if isinstance(ctx_data, str):
+            ctx_data = json.loads(ctx_data)
+
+        ctx = StageContext({
+            **ctx_data,
+            "_brain": self.brain,
+            "_queue": self.queue,
+            "job_id": job_id,
+            "topic": job["topic"],
+            "output_dir": settings.output_dir,
+            "assets_dir": settings.assets_dir,
+        })
 
         stage_keys = list(self.stages.keys())
         start_index = stage_keys.index(current_stage) if current_stage in stage_keys else 0
@@ -65,17 +89,33 @@ class PipelineOrchestrator:
                 next_stage = stage_keys[i + 1] if i + 1 < len(stage_keys) else "done"
                 self.queue.advance(job_id, next_stage)
             except Exception as e:
+                logger.exception(f"Stage {stage_key} failed for job {job_id}")
                 self.queue.fail(job_id, str(e))
                 return False
 
+        brain = self.brain
+        if ctx.get("video_info"):
+            video_info = ctx["video_info"]
+            brain.learn("performance", {
+                "avg_render_time": video_info.get("duration", 30),
+            })
+
+        video_memory = brain.memory.get("video_memory", {})
+        brain.set("video_memory", "total_generated",
+                  video_memory.get("total_generated", 0) + 1)
+        brain.set("video_memory", "total_uploaded",
+                  video_memory.get("total_uploaded", 0) + 1)
+
         return True
 
-    async def process_pending(self, limit: int = 5) -> list[str]:
+    async def process_pending(self, limit: int = 5) -> list[tuple[str, bool]]:
         jobs = self.queue.dequeue(limit)
         results = []
         for job in jobs:
+            logger.info(f"Processing job: {job['id']} - {job['topic']}")
             success = await self.process_job(job["id"])
             results.append((job["id"], success))
+            logger.info(f"Job {job['id']}: {'✓' if success else '✗'}")
         return results
 
     async def run_continuous(self, interval: int = 30):
