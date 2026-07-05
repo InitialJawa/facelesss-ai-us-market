@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.so
+.venv/
+venv/
+*.egg
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project data
+output/*
+!output/.gitkeep
+assets/*
+!assets/.gitkeep
+voices/*
+!voices/.gitkeep
+logs/*
+!logs/.gitkeep
+brain/memory/*
+!brain/memory/.gitkeep
+
+# Database
+*.db
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/data/
+
+# Video/Audio
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.m4a
+*.flac
+
+# Temp
+tmp/
+temp/
+*.tmp

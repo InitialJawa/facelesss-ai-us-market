@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  app:
+    build: ..
+    container_name: faceless-ai
+    restart: unless-stopped
+    env_file: ../.env
+    volumes:
+      - ../output:/app/output
+      - ../assets:/app/assets
+      - ../voices:/app/voices
+      - ../logs:/app/logs
+      - ../brain:/app/brain
+      - ../pipeline/queue.db:/app/pipeline/queue.db
+    depends_on:
+      db:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+  db:
+    image: postgres:16-alpine
+    container_name: faceless-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: faceless_ai
+      POSTGRES_USER: faceless
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faceless -d faceless_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
